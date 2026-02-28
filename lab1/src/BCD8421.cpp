@@ -8,7 +8,6 @@ BCD8421::BCD8421() {
     for (int i = 0; i < 8; i++) digits[i] = 0;
 }
 
-// ============ ВСПОМОГАТЕЛЬНЫЕ ============
 
 unsigned char BCD8421::toBCD(unsigned char value) {
     return value & 0x0F;
@@ -29,7 +28,7 @@ void BCD8421::correctDigit(unsigned char& digit, int& carry) {
     }
 }
 
-// ============ ПРЕОБРАЗОВАНИЕ В ДОПОЛНИТЕЛЬНЫЙ КОД ============
+
 
 void BCD8421::toAdditionalCode() {
     // Проверяем знаковую тетраду (digits[0])
@@ -87,7 +86,6 @@ void BCD8421::fromAdditionalToDirect() {
     // Знаковая тетрада остается 1111
 }
 
-// ============ ПРЕОБРАЗОВАНИЕ ИЗ ДЕСЯТИЧНОГО ============
 
 void BCD8421::fromDecimal(int num) {
     // Очищаем
@@ -122,7 +120,7 @@ void BCD8421::fromDecimal(int num) {
     }
 }
 
-// ============ ПРЕОБРАЗОВАНИЕ В ДЕСЯТИЧНОЕ ============
+
 
 int BCD8421::toDecimal() const {
     BCD8421 temp = *this;
@@ -142,7 +140,6 @@ int BCD8421::toDecimal() const {
     return ((digits[0] & 0x0F) == 0x0F) ? -result : result;
 }
 
-// ============ ПЕЧАТЬ ============
 
 void BCD8421::printBCD() const {
     for (int i = 0; i < 8; i++) {
@@ -156,7 +153,6 @@ void BCD8421::printBCD() const {
     cout << toDecimal() << ")";
 }
 
-// ============ СЛОЖЕНИЕ В ДОПОЛНИТЕЛЬНОМ КОДЕ ============
 
 BCD8421 BCD8421::add(const BCD8421& a, const BCD8421& b) {
     BCD8421 result;
@@ -196,4 +192,5 @@ BCD8421 BCD8421::add(const BCD8421& a, const BCD8421& b) {
     cout << "Результат: "; result.printBCD(); cout << "\n";
 
     return result;
+
 }
