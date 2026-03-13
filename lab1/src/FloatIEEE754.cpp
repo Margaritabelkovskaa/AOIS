@@ -1,113 +1,88 @@
-﻿#include "FloatIEEE754.h"
+#include "FloatIEEE754.h"
 #include <cmath>
 #include <iostream>
 using namespace std;
 
-// Конструктор
+namespace FloatConstants {
+    const int BITS_COUNT = 32;
+    const int SIGN_BIT = 31;
+    const int EXPONENT_BITS = 8;
+    const int MANTISSA_BITS = 23;
+    const int EXPONENT_BIAS = 127;
+    const int MAX_EXPONENT = 255;
+    const int MANTISSA_IMPLICIT_BIT = 23;
+    const int MANTISSA_EXTENDED_BITS = 24;
+    const int MULTIPLICATION_EXTRA_BITS = 47;
+    const int MAX_NORMALIZATION_SHIFT = 32;
+}
+
 FloatIEEE754::FloatIEEE754() {
-    for (int i = 0; i < 32; i++) bits[i] = 0;
+    for (int i = 0; i < FloatConstants::BITS_COUNT; i++) bits[i] = 0;
 }
 
-// Преобразование из десятичного
 void FloatIEEE754::fromDecimal(float num) {
-    union {
-        float f;
-        unsigned int i;
-    } u;
+    union { float f; unsigned int i; } u;
     u.f = num;
-
-    for (int i = 0; i < 32; i++) {
+    for (int i = 0; i < FloatConstants::BITS_COUNT; i++)
         bits[i] = (u.i >> i) & 1;
-    }
 }
 
-// Преобразование в десятичное
 float FloatIEEE754::toDecimal() const {
-    union {
-        float f;
-        unsigned int i;
-    } u;
-
+    union { float f; unsigned int i; } u;
     u.i = 0;
-    for (int i = 0; i < 32; i++) {
-        if (bits[i]) {
-            u.i |= (1 << i);
-        }
-    }
+    for (int i = 0; i < FloatConstants::BITS_COUNT; i++)
+        if (bits[i]) u.i |= (1 << i);
     return u.f;
 }
 
-// Печать двоичного представления
 void FloatIEEE754::printBinary() const {
-    for (int i = 31; i >= 0; i--) {
+    for (int i = FloatConstants::BITS_COUNT - 1; i >= 0; i--) {
         cout << bits[i];
-        if (i == 31 || i == 23) cout << " ";
+        if (i == FloatConstants::SIGN_BIT || i == FloatConstants::MANTISSA_BITS)
+            cout << " ";
     }
 }
 
-// ============ МЕТОДЫ ДОСТУПА К КОМПОНЕНТАМ ============
-
 int FloatIEEE754::getExponent() const {
     int exp = 0;
-    for (int i = 0; i < 8; i++) {
-        if (bits[23 + i]) {
-            exp |= (1 << i);
-        }
-    }
+    for (int i = 0; i < FloatConstants::EXPONENT_BITS; i++)
+        if (bits[FloatConstants::MANTISSA_BITS + i]) exp |= (1 << i);
     return exp;
 }
 
 unsigned int FloatIEEE754::getMantissa() const {
     unsigned int mant = 0;
-    for (int i = 0; i < 23; i++) {
-        if (bits[i]) {
-            mant |= (1 << i);
-        }
-    }
+    for (int i = 0; i < FloatConstants::MANTISSA_BITS; i++)
+        if (bits[i]) mant |= (1 << i);
     return mant;
 }
 
 void FloatIEEE754::setExponent(int e) {
-    for (int i = 0; i < 8; i++) {
-        bits[23 + i] = (e >> i) & 1;
-    }
+    for (int i = 0; i < FloatConstants::EXPONENT_BITS; i++)
+        bits[FloatConstants::MANTISSA_BITS + i] = (e >> i) & 1;
 }
 
 void FloatIEEE754::setMantissa(unsigned int m) {
-    for (int i = 0; i < 23; i++) {
+    for (int i = 0; i < FloatConstants::MANTISSA_BITS; i++)
         bits[i] = (m >> i) & 1;
-    }
 }
 
-// ============ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ============
-
-// Нормализация мантиссы
-void normalize(unsigned int& mant, int& exp) {
-    if (mant == 0) {
-        exp = 0;
-        return;
-    }
-    // Пока нет единицы в 24-й позиции (счет от 0)
-    while ((mant & (1 << 23)) == 0) {
-        mant <<= 1;
-        exp--;
-    }
+bool FloatIEEE754::isNaN() const {
+    return (getExponent() == FloatConstants::MAX_EXPONENT && getMantissa() != 0);
 }
 
-// Проверка специальных случаев
-bool isNaN(int exp, unsigned int mant) {
-    return (exp == 255 && mant != 0);
+bool FloatIEEE754::isInfinity() const {
+    return (getExponent() == FloatConstants::MAX_EXPONENT && getMantissa() == 0);
 }
 
-bool isInfinity(int exp, unsigned int mant) {
-    return (exp == 255 && mant == 0);
+bool FloatIEEE754::isZero() const {
+    return (getExponent() == 0 && getMantissa() == 0);
 }
 
-bool isZero(int exp, unsigned int mant) {
-    return (exp == 0 && mant == 0);
+bool FloatIEEE754::isDenormal() const {
+    return (getExponent() == 0 && getMantissa() != 0);
 }
 
-// ============ АППАРАТНОЕ СЛОЖЕНИЕ ============
 
 FloatIEEE754 FloatIEEE754::add(const FloatIEEE754& a, const FloatIEEE754& b) {
     // Извлекаем компоненты
@@ -117,358 +92,260 @@ FloatIEEE754 FloatIEEE754::add(const FloatIEEE754& a, const FloatIEEE754& b) {
     int expB = b.getExponent();
     unsigned int mantA = a.getMantissa();
     unsigned int mantB = b.getMantissa();
-
-    // ПРОВЕРКА СПЕЦИАЛЬНЫХ СЛУЧАЕВ
-    // NaN
-    if (isNaN(expA, mantA)) return a;
-    if (isNaN(expB, mantB)) return b;
-
-    // Бесконечности
-    if (isInfinity(expA, mantA)) {
-        if (isInfinity(expB, mantB)) {
-           
-            if (signA == signB) {
-                FloatIEEE754 res;
-                res.setSign(signA);
-                res.setExponent(255);
-                res.setMantissa(0);
-                return res;
-            }
-            else {
-                // ∞ + (-∞) = NaN
-                FloatIEEE754 res;
-                res.setExponent(255);
-                res.setMantissa(1); // любое ненулевое значение
-                return res;
-            }
+    
+    FloatIEEE754 result;
+    
+    // Проверка специальных случаев
+    if (a.isNaN()) return a;
+    if (b.isNaN()) return b;
+    
+    if (a.isInfinity()) {
+        if (b.isInfinity() && a.getSign() != b.getSign()) {
+            result.setExponent(FloatConstants::MAX_EXPONENT);
+            result.setMantissa(1);
+            return result;
         }
-        return a; // ∞ + X = ∞
+        return a;
     }
-    if (isInfinity(expB, mantB)) return b;
-
+    if (b.isInfinity()) return b;
+    
     // Добавляем неявную единицу
-    if (expA != 0) mantA |= (1 << 23);
-    if (expB != 0) mantB |= (1 << 23);
-
-    int expRes = expA;
-    unsigned int mantRes;
-    int signRes;
-
-    // ВЫРАВНИВАНИЕ ЭКСПОНЕНТ
+    unsigned long long mantLongA = mantA;
+    unsigned long long mantLongB = mantB;
+    if (expA != 0) mantLongA |= (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT);
+    if (expB != 0) mantLongB |= (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT);
+    
+    // Выравнивание экспонент
+    int expRes;
     if (expA > expB) {
-        int shift = expA - expB;
-        if (shift < 32) {
-            mantB >>= shift;
-        }
-        else {
-            mantB = 0;
-        }
+        mantLongB >>= (expA - expB);
+        expRes = expA;
+    } else if (expB > expA) {
+        mantLongA >>= (expB - expA);
+        expRes = expB;
+    } else {
         expRes = expA;
     }
-    else if (expB > expA) {
-        int shift = expB - expA;
-        if (shift < 32) {
-            mantA >>= shift;
-        }
-        else {
-            mantA = 0;
-        }
-        expRes = expB;
-    }
-
-    // СЛОЖЕНИЕ/ВЫЧИТАНИЕ МАНТИСС
+    
+    // Сложение/вычитание мантисс
+    unsigned long long mantRes;
+    int signRes;
+    
     if (signA == signB) {
-        // Одинаковые знаки - складываем
-        mantRes = mantA + mantB;
+        mantRes = mantLongA + mantLongB;
         signRes = signA;
-
-        // Обработка переполнения
-        if (mantRes & (1 << 24)) {
+        if (mantRes & (1ULL << FloatConstants::MANTISSA_EXTENDED_BITS)) {
             mantRes >>= 1;
             expRes++;
         }
-    }
-    else {
-        // Разные знаки - вычитаем
-        if (mantA >= mantB) {
-            mantRes = mantA - mantB;
+    } else {
+        if (mantLongA >= mantLongB) {
+            mantRes = mantLongA - mantLongB;
             signRes = signA;
-        }
-        else {
-            mantRes = mantB - mantA;
+        } else {
+            mantRes = mantLongB - mantLongA;
             signRes = signB;
         }
-
-        // Нормализация
         if (mantRes != 0) {
-            while ((mantRes & (1 << 23)) == 0) {
+            while ((mantRes & (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT)) == 0) {
                 mantRes <<= 1;
                 expRes--;
             }
         }
     }
-
-    // ПРОВЕРКА НА ПЕРЕПОЛНЕНИЕ ЭКСПОНЕНТЫ
-    if (expRes >= 255) {
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(255);
-        res.setMantissa(0);
-        return res; // бесконечность
+    
+    // Проверка переполнения
+    if (expRes >= FloatConstants::MAX_EXPONENT) {
+        result.setSign(signRes);
+        result.setExponent(FloatConstants::MAX_EXPONENT);
+        result.setMantissa(0);
+        return result;
     }
-
-    // ПРОВЕРКА НА ИСЧЕЗНОВЕНИЕ ПОРЯДКА
+    
+    // Проверка underflow
     if (expRes <= 0) {
-        if (expRes <= -24 || mantRes == 0) {
-            FloatIEEE754 res;
-            res.setSign(signRes);
-            return res; // ноль
+        if (expRes <= -FloatConstants::MANTISSA_EXTENDED_BITS || mantRes == 0) {
+            result.setSign(signRes);
+            result.setExponent(0);
+            result.setMantissa(0);
+            return result;
         }
-        // Денормализованное число
         mantRes >>= (1 - expRes);
         expRes = 0;
     }
-
+    
     // Убираем неявную единицу
-    if (expRes != 0) {
-        mantRes &= ~(1 << 23);
-    }
-    else {
-        // Для денормализованных неявной единицы нет
-    }
-
-    // СБОРКА РЕЗУЛЬТАТА
-    FloatIEEE754 result;
+    unsigned int finalMant;
+    if (expRes != 0)
+        finalMant = (unsigned int)(mantRes & ~(1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT));
+    else
+        finalMant = (unsigned int)mantRes;
+    
     result.setSign(signRes);
     result.setExponent(expRes);
-    result.setMantissa(mantRes);
+    result.setMantissa(finalMant);
     return result;
 }
 
-// ============ АППАРАТНОЕ ВЫЧИТАНИЕ ============
-
 FloatIEEE754 FloatIEEE754::subtract(const FloatIEEE754& a, const FloatIEEE754& b) {
-    // a - b = a + (-b)
     FloatIEEE754 negB = b;
     negB.setSign(!b.getSign());
     return add(a, negB);
 }
 
-// ============ АППАРАТНОЕ УМНОЖЕНИЕ ============
 
-// ============ ИСПРАВЛЕННОЕ АППАРАТНОЕ УМНОЖЕНИЕ ============
+int getRealExponent(int exp) {
+    return (exp == 0) ? -126 : exp - FloatConstants::EXPONENT_BIAS;
+}
+
 FloatIEEE754 FloatIEEE754::multiply(const FloatIEEE754& a, const FloatIEEE754& b) {
-    // Извлекаем компоненты
-    int signA = a.getSign();
-    int signB = b.getSign();
-    int expA = a.getExponent();
-    int expB = b.getExponent();
-    unsigned int mantA = a.getMantissa();
-    unsigned int mantB = b.getMantissa();
-
-    // Знак результата
+    int signA = a.getSign(), signB = b.getSign();
+    int expA = a.getExponent(), expB = b.getExponent();
+    unsigned int mantA = a.getMantissa(), mantB = b.getMantissa();
     int signRes = signA ^ signB;
-
-    // ПРОВЕРКА СПЕЦИАЛЬНЫХ СЛУЧАЕВ
-    if (isNaN(expA, mantA)) return a;
-    if (isNaN(expB, mantB)) return b;
-
-    if (isInfinity(expA, mantA)) {
-        if (isZero(expB, mantB)) {
-            FloatIEEE754 res;
-            res.setExponent(255);
-            res.setMantissa(1);
-            return res; // NaN
+    FloatIEEE754 result;
+    
+    if (a.isNaN()) return a;
+    if (b.isNaN()) return b;
+    
+    if (a.isInfinity()) {
+        if (b.isZero()) {
+            result.setExponent(FloatConstants::MAX_EXPONENT);
+            result.setMantissa(1);
+            return result;
         }
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(255);
-        return res;
+        result.setSign(signRes);
+        result.setExponent(FloatConstants::MAX_EXPONENT);
+        result.setMantissa(0);
+        return result;
     }
-    if (isInfinity(expB, mantB)) {
-        if (isZero(expA, mantA)) {
-            FloatIEEE754 res;
-            res.setExponent(255);
-            res.setMantissa(1);
-            return res; // NaN
+    
+    if (b.isInfinity()) {
+        if (a.isZero()) {
+            result.setExponent(FloatConstants::MAX_EXPONENT);
+            result.setMantissa(1);
+            return result;
         }
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(255);
-        return res;
+        result.setSign(signRes);
+        result.setExponent(FloatConstants::MAX_EXPONENT);
+        result.setMantissa(0);
+        return result;
     }
-
-    if (isZero(expA, mantA) || isZero(expB, mantB)) {
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        return res;
+    
+    if (a.isZero() || b.isZero()) {
+        result.setSign(signRes);
+        result.setExponent(0);
+        result.setMantissa(0);
+        return result;
     }
-
-    // ИСПРАВЛЕНО: Правильные реальные экспоненты
-    int realExpA = (expA == 0) ? -126 : expA - 127;
-    int realExpB = (expB == 0) ? -126 : expB - 127;
-
-    // Добавляем неявную единицу
+    
+    int realExpA = getRealExponent(expA);
+    int realExpB = getRealExponent(expB);
+    
     unsigned long long mantLongA = mantA;
     unsigned long long mantLongB = mantB;
-
-    if (expA != 0) mantLongA |= (1ULL << 23);
-    if (expB != 0) mantLongB |= (1ULL << 23);
-
-    // ИСПРАВЛЕНО: Умножение 24-битных чисел
+    if (expA != 0) mantLongA |= (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT);
+    if (expB != 0) mantLongB |= (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT);
+    
     unsigned long long mantRes = mantLongA * mantLongB;
-
-    // ИСПРАВЛЕНО: Вычисление экспоненты
-    int expRes = realExpA + realExpB + 127;
-
-    // ИСПРАВЛЕНО: Правильная нормализация
-    if (mantRes & (1ULL << 47)) {
-        // Результат в [2, 4)
-        mantRes >>= 24;  // Сдвигаем на 24, чтобы получить 24 бита
+    int expRes = realExpA + realExpB + FloatConstants::EXPONENT_BIAS;
+    
+    if (mantRes & (1ULL << FloatConstants::MULTIPLICATION_EXTRA_BITS)) {
+        mantRes >>= FloatConstants::MANTISSA_EXTENDED_BITS;
         expRes++;
+    } else {
+        mantRes >>= FloatConstants::MANTISSA_IMPLICIT_BIT;
     }
-    else {
-        // Результат в [1, 2)
-        mantRes >>= 23;  // Сдвигаем на 23, чтобы получить 24 бита
+ 
+    if (expRes >= FloatConstants::MAX_EXPONENT) {
+        result.setSign(signRes);
+        result.setExponent(FloatConstants::MAX_EXPONENT);
+        result.setMantissa(0);
+        return result;
     }
-
-    // Проверка на переполнение
-    if (expRes >= 255) {
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(255);
-        return res;
-    }
-
-    // Проверка на исчезновение порядка
+  
     if (expRes <= 0) {
-        if (expRes <= -24) {
-            FloatIEEE754 res;
-            res.setSign(signRes);
-            return res;
+        if (expRes <= -FloatConstants::MANTISSA_EXTENDED_BITS) {
+            result.setSign(signRes);
+            result.setExponent(0);
+            result.setMantissa(0);
+            return result;
         }
         mantRes >>= (1 - expRes);
         expRes = 0;
     }
-
+    
     // Убираем неявную единицу
     unsigned int finalMant;
-    if (expRes != 0) {
-        finalMant = mantRes & ~(1ULL << 23);
-    }
-    else {
+    if (expRes != 0)
+        finalMant = (unsigned int)(mantRes & ~(1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT));
+    else
         finalMant = (unsigned int)mantRes;
-    }
-
-    FloatIEEE754 result;
+    
     result.setSign(signRes);
     result.setExponent(expRes);
     result.setMantissa(finalMant);
     return result;
-}// ============ АППАРАТНОЕ ДЕЛЕНИЕ ============
+}
 
-// ИСПРАВЛЕННОЕ ДЕЛЕНИЕ:
 
-// ============ ИСПРАВЛЕННОЕ АППАРАТНОЕ ДЕЛЕНИЕ ============
-
-// ============ АППАРАТНОЕ ДЕЛЕНИЕ ============
-
-FloatIEEE754 FloatIEEE754::divide(const FloatIEEE754& a, const FloatIEEE754& b) {
-    // Извлекаем компоненты
-    int signA = a.getSign();
-    int signB = b.getSign();
-    int expA = a.getExponent();
-    int expB = b.getExponent();
-    unsigned int mantA = a.getMantissa();
-    unsigned int mantB = b.getMantissa();
-
-    // Знак результата
-    int signRes = signA ^ signB;
-
-    // ПРОВЕРКА СПЕЦИАЛЬНЫХ СЛУЧАЕВ
-    if (isNaN(expA, mantA)) return a;
-    if (isNaN(expB, mantB)) return b;
-
-    // Проверка на деление на ноль
-    if (isZero(expB, mantB)) {
-        if (isZero(expA, mantA)) {
-            // 0 / 0 = NaN
-            FloatIEEE754 res;
-            res.setExponent(255);
-            res.setMantissa(1);
-            return res;
+bool checkDivideSpecialCases(const FloatIEEE754& a, const FloatIEEE754& b,
+                              int signRes, FloatIEEE754& result) {
+    if (a.isNaN()) { result = a; return true; }
+    if (b.isNaN()) { result = b; return true; }
+    
+    if (b.isZero()) {
+        if (a.isZero()) {
+            result.setExponent(FloatConstants::MAX_EXPONENT);
+            result.setMantissa(1);
+        } else {
+            result.setSign(signRes);
+            result.setExponent(FloatConstants::MAX_EXPONENT);
+            result.setMantissa(0);
         }
-        // X / 0 = Infinity
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(255);
-        res.setMantissa(0);
-        return res;
+        return true;
     }
-
-    // Бесконечности
-    if (isInfinity(expA, mantA)) {
-        if (isInfinity(expB, mantB)) {
-            // ∞ / ∞ = NaN
-            FloatIEEE754 res;
-            res.setExponent(255);
-            res.setMantissa(1);
-            return res;
+    
+    if (a.isInfinity()) {
+        if (b.isInfinity()) {
+            result.setExponent(FloatConstants::MAX_EXPONENT);
+            result.setMantissa(1);
+        } else {
+            result.setSign(signRes);
+            result.setExponent(FloatConstants::MAX_EXPONENT);
+            result.setMantissa(0);
         }
-        // ∞ / X = ∞
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(255);
-        res.setMantissa(0);
-        return res;
+        return true;
     }
-
-    if (isInfinity(expB, mantB)) {
-        // X / ∞ = 0
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(0);
-        res.setMantissa(0);
-        return res;
+    
+    if (b.isInfinity() || a.isZero()) {
+        result.setSign(signRes);
+        result.setExponent(0);
+        result.setMantissa(0);
+        return true;
     }
+    return false;
+}
 
-    if (isZero(expA, mantA)) {
-        // 0 / X = 0
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(0);
-        res.setMantissa(0);
-        return res;
-    }
+unsigned long long addImplicitBit(unsigned int mant, int exp) {
+    if (exp == 0) return mant;
+    return mant | (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT);
+}
 
-    // Получаем реальные экспоненты (со смещением 127)
-    int realExpA = (expA == 0) ? -126 : expA - 127;
-    int realExpB = (expB == 0) ? -126 : expB - 127;
-
-    // Добавляем неявную единицу к мантиссам (24 бита: 1 + 23)
-    unsigned long long mantLongA = mantA;
-    unsigned long long mantLongB = mantB;
-
-    if (expA != 0) mantLongA |= (1ULL << 23);
-    if (expB != 0) mantLongB |= (1ULL << 23);
-
-    // ============ ПРАВИЛЬНОЕ ДЕЛЕНИЕ ============
-
-    // ШАГ 1: Нормализуем делимое, чтобы оно было не меньше делителя
+int normalizeDividend(unsigned long long& dividend, unsigned long long divisor) {
     int shift = 0;
-    unsigned long long dividend = mantLongA;
-    unsigned long long divisor = mantLongB;
-
-    while (dividend < divisor && shift < 32) {
+    while (dividend < divisor && shift < FloatConstants::MAX_NORMALIZATION_SHIFT) {
         dividend <<= 1;
         shift++;
     }
+    return shift;
+}
 
-    // ШАГ 2: Выполняем деление для получения 24 бит мантиссы
+unsigned long long performDivision(unsigned long long dividend, unsigned long long divisor) {
     unsigned long long quotient = 0;
     unsigned long long remainder = dividend;
-
-    for (int i = 0; i < 24; i++) {
+    
+    for (int i = 0; i < FloatConstants::MANTISSA_EXTENDED_BITS; i++) {
         quotient <<= 1;
         if (remainder >= divisor) {
             quotient |= 1;
@@ -476,73 +353,84 @@ FloatIEEE754 FloatIEEE754::divide(const FloatIEEE754& a, const FloatIEEE754& b) 
         }
         remainder <<= 1;
     }
+    return quotient;
+}
 
-    // ШАГ 3: Убираем лишние сдвиги из частного
-    if (shift > 0) {
-        quotient >>= shift;
-    }
-
-    // ШАГ 4: Вычисляем экспоненту результата
-    int expRes = realExpA - realExpB + 127;
-
-    // ШАГ 5: Нормализация результата (приводим к виду 1.xxx)
-    if (quotient & (1ULL << 24)) {
-        // Частное >= 2, сдвигаем вправо и увеличиваем экспоненту
+void normalizeQuotient(unsigned long long& quotient, int& expRes) {
+    if (quotient & (1ULL << FloatConstants::MANTISSA_EXTENDED_BITS)) {
         quotient >>= 1;
         expRes++;
-    }
-    else if ((quotient & (1ULL << 23)) == 0) {
-        // Частное < 1, сдвигаем влево пока не получим 1.xxx
+    } else if ((quotient & (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT)) == 0) {
         int normShift = 0;
-        while ((quotient & (1ULL << 23)) == 0 && quotient != 0) {
+        while ((quotient & (1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT)) == 0 && quotient != 0) {
             quotient <<= 1;
             normShift++;
         }
         expRes -= normShift;
     }
+}
 
-    // ШАГ 6: Проверка на переполнение экспоненты
-    if (expRes >= 255) {
-        FloatIEEE754 res;
-        res.setSign(signRes);
-        res.setExponent(255);
-        res.setMantissa(0);
-        return res; // бесконечность
+unsigned int removeImplicitBit(unsigned long long mant, int exp) {
+    if (exp == 0) return (unsigned int)mant;
+    return (unsigned int)(mant & ~(1ULL << FloatConstants::MANTISSA_IMPLICIT_BIT));
+}
+
+bool checkDivideOverflow(int expRes, int signRes, FloatIEEE754& result) {
+    if (expRes >= FloatConstants::MAX_EXPONENT) {
+        result.setSign(signRes);
+        result.setExponent(FloatConstants::MAX_EXPONENT);
+        result.setMantissa(0);
+        return true;
     }
+    return false;
+}
 
-    // ШАГ 7: Проверка на исчезновение порядка (underflow)
+bool checkDivideUnderflow(int& expRes, unsigned long long& quotient,
+                          int signRes, FloatIEEE754& result) {
     if (expRes <= 0) {
-        if (expRes <= -24 || quotient == 0) {
-            // Слишком маленькое число - возвращаем 0
-            FloatIEEE754 res;
-            res.setSign(signRes);
-            res.setExponent(0);
-            res.setMantissa(0);
-            return res;
+        if (expRes <= -FloatConstants::MANTISSA_EXTENDED_BITS || quotient == 0) {
+            result.setSign(signRes);
+            result.setExponent(0);
+            result.setMantissa(0);
+            return true;
         }
-
-        // Денормализованное число
         quotient >>= (1 - expRes);
         expRes = 0;
     }
+    return false;
+}
 
-    // ШАГ 8: Оставляем только 24 бита мантиссы
-    quotient &= ((1ULL << 24) - 1);
-
-    // ШАГ 9: Убираем неявную единицу
-    unsigned int finalMant;
-    if (expRes != 0) {
-        finalMant = (unsigned int)(quotient & ~(1ULL << 23));
-    }
-    else {
-        finalMant = (unsigned int)quotient;
-    }
-
-    // ШАГ 10: Сборка результата
+FloatIEEE754 FloatIEEE754::divide(const FloatIEEE754& a, const FloatIEEE754& b) {
+    int signA = a.getSign();
+    int signB = b.getSign();
+    int expA = a.getExponent();
+    int expB = b.getExponent();
+    unsigned int mantA = a.getMantissa();
+    unsigned int mantB = b.getMantissa();
+    int signRes = signA ^ signB;
     FloatIEEE754 result;
+    if (checkDivideSpecialCases(a, b, signRes, result)) return result;
+    int realExpA = getRealExponent(expA);
+    int realExpB = getRealExponent(expB);
+    
+    unsigned long long mantLongA = addImplicitBit(mantA, expA);
+    unsigned long long mantLongB = addImplicitBit(mantB, expB);
+    
+    int shift = normalizeDividend(mantLongA, mantLongB);
+    unsigned long long quotient = performDivision(mantLongA, mantLongB);
+    if (shift > 0) quotient >>= shift;
+
+    int expRes = realExpA - realExpB + FloatConstants::EXPONENT_BIAS;
+    normalizeQuotient(quotient, expRes);
+
+    if (checkDivideOverflow(expRes, signRes, result)) return result;
+    if (checkDivideUnderflow(expRes, quotient, signRes, result)) return result;
+    
+    quotient &= ((1ULL << FloatConstants::MANTISSA_EXTENDED_BITS) - 1);
+    unsigned int finalMant = removeImplicitBit(quotient, expRes);
+    
     result.setSign(signRes);
     result.setExponent(expRes);
     result.setMantissa(finalMant);
-
     return result;
 }
