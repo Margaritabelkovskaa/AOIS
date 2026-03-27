@@ -4,6 +4,7 @@
 #include <string>
 #include "ExpressionParser.h"
 #include "TruthTable.h"
+#include "DummyVariables.h"
 
 class LogicFunction {
 private:
@@ -21,8 +22,7 @@ public:
     string getNumericSKNF();
     string getIndexForm();
 
-    // Нужно добавить эти методы
-    void findDummyVariables();        
+    void findDummyVariables();
     void checkPostClasses();
     string getZhegalkinPolynomial();
     void booleanDifferentiation();
@@ -31,6 +31,7 @@ public:
     void minimizeKarnaugh();
 
     const TruthTable& getTruthTable() const { return truth_table; }
+    DummyVariables getDummyVariables() const { return DummyVariables(truth_table); }
 };
 
 #endif
